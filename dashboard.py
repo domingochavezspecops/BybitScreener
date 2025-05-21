@@ -4,8 +4,6 @@ Creates a terminal-based UI using the Rich library.
 """
 
 import logging
-import time
-from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from rich.console import Console
@@ -34,7 +32,7 @@ class Dashboard:
         self.market_data = market_data
         self.console = Console()
         self.layout = self._create_layout()
-        self.live = Live(self.layout, refresh_per_second=1/config.REFRESH_RATE)
+        self.live = Live(self.layout, refresh_per_second=1/config.REFRESH_RATE, screen=True)
 
     def _create_layout(self) -> Layout:
         """
@@ -48,13 +46,7 @@ class Dashboard:
         # Split into header and body
         layout.split(
             Layout(name="header", size=3),
-            Layout(name="body")
-        )
-
-        # Split body into top coins and opportunities
-        layout["body"].split_row(
-            Layout(name="top_coins", ratio=1),
-            Layout(name="opportunities", ratio=2)
+            Layout(name="alerts")
         )
 
         return layout
@@ -79,52 +71,6 @@ class Dashboard:
             border_style=config.COLOR_HEADER
         )
 
-    def _generate_top_coins_table(self) -> Table:
-        """
-        Generate the top coins table.
-
-        Returns:
-            Table object
-        """
-        table = Table(
-            title="Top Volume Coins",
-            box=box.ROUNDED,
-            title_style=f"bold {config.COLOR_HEADER}",
-            border_style=config.COLOR_HEADER
-        )
-
-        # Add columns
-        table.add_column("Symbol", style="bold")
-        table.add_column("Price", justify="right")
-        table.add_column("24h Change", justify="right")
-        table.add_column("24h Volume", justify="right")
-
-        # Add rows
-        for coin in self.market_data.top_volume_coins[:config.TOP_COINS_LIMIT]:
-            symbol = coin.get('symbol', '')
-            price = coin.get('lastPrice', '0')
-
-            # Format 24h change with color
-            change_pct = coin.get('price24hPcnt', '0')
-            try:
-                change_float = float(change_pct) * 100
-                change_color = config.COLOR_POSITIVE if change_float >= 0 else config.COLOR_NEGATIVE
-                change_formatted = f"[{change_color}]{change_float:.2f}%[/{change_color}]"
-            except (ValueError, TypeError):
-                change_formatted = "0.00%"
-
-            # Format volume
-            volume = coin.get('volume24h', '0')
-            try:
-                volume_float = float(volume)
-                volume_formatted = f"{volume_float:,.0f}"
-            except (ValueError, TypeError):
-                volume_formatted = "0"
-
-            table.add_row(symbol, price, change_formatted, volume_formatted)
-
-        return table
-
     def _generate_opportunities_table(self) -> Table:
         """
         Generate the opportunities table.
@@ -133,10 +79,11 @@ class Dashboard:
             Table object
         """
         table = Table(
-            title="Strong Trading Opportunities",
+            title="Trading Opportunities",
             box=box.ROUNDED,
             title_style=f"bold {config.COLOR_HEADER}",
-            border_style=config.COLOR_HEADER
+            border_style=config.COLOR_HEADER,
+            expand=True
         )
 
         # Add columns
@@ -148,13 +95,13 @@ class Dashboard:
         table.add_column("Strength", justify="center")
 
         # Filter for only high-quality signals with directional bias
-        strong_opportunities = [
+        filtered_opportunities = [
             opp for opp in self.market_data.opportunities
             if opp.get('high_quality', False) and opp.get('directional_bias') is not None
         ]
 
         # Add rows
-        for opp in strong_opportunities:
+        for opp in filtered_opportunities:
             time_str = opp.get('time', '')
             added_time = opp.get('added_time', '')
             symbol = opp.get('symbol', '')
@@ -199,7 +146,6 @@ class Dashboard:
 
             # Format details and signal type based on opportunity type
             if opp_type == 'big_trade':
-                side = opp.get('side', '')
                 value = opp.get('value', 0)
                 details = f"${value:,.0f}"
 
@@ -220,7 +166,7 @@ class Dashboard:
                 details = f"{abs(pct_change):.2f}% {trend_indicator}"
 
                 # Format type
-                signal_type = "Strong Move"
+                signal_type = "Price Move"
 
                 # Check for volume confirmation
                 if self.market_data.has_combined_signals(symbol):
@@ -244,9 +190,9 @@ class Dashboard:
 
             table.add_row(time_str, direction, symbol, signal_type, details, strength)
 
-        # If no strong opportunities, add a message
-        if not strong_opportunities:
-            table.add_row("", "", "[dim]No strong trading opportunities at this time[/dim]", "", "", "")
+        # If no opportunities, add a message
+        if not filtered_opportunities:
+            table.add_row("", "", "[dim]No trading opportunities at this time[/dim]", "", "", "")
 
         return table
 
@@ -255,11 +201,8 @@ class Dashboard:
         # Update header
         self.layout["header"].update(self._generate_header())
 
-        # Update top coins
-        self.layout["top_coins"].update(self._generate_top_coins_table())
-
-        # Update opportunities
-        self.layout["opportunities"].update(self._generate_opportunities_table())
+        # Update alerts
+        self.layout["alerts"].update(self._generate_opportunities_table())
 
     def start(self):
         """Start the live dashboard."""
